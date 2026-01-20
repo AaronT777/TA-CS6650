@@ -9,6 +9,7 @@ import (
 // 1. What will the final value of `counter` be after the program exits?
 // 2. Are the FIRST THREE printed lines deterministic? If not, list what *must* be true
 
+//
 // This program demonstrates:
 // - Race conditions and why we need synchronization
 // - Mutex protects shared data but does NOT control execution order

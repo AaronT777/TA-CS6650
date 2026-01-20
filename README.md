@@ -30,7 +30,7 @@ I've prepared three Go programs that test different concurrency concepts - thing
 Here's how this works:
 - I'll show you the code and questions
 - Think it through and tell me what you expect to happen
-- Don't worry about getting it perfect - the discussion is more important
+- Don't worry about getting it perfect - just try your best
 - After your answer, we'll run it together and discuss
 
 Sound good? Let's look at the first one.
@@ -38,6 +38,81 @@ Sound good? Let's look at the first one.
 ---
 
 ## Test 1: Concurrent Counter with Mutex
+
+### 代码讲解指南 (How to Explain the Code Line by Line)
+
+**整体目的：**
+"This program demonstrates concurrent access to shared data using goroutines and mutex synchronization."
+
+**逐行讲解：**
+
+```go
+var wg sync.WaitGroup
+```
+"WaitGroup is like a counter - we'll use it to wait for all goroutines to finish before exiting."
+
+```go
+var mu sync.Mutex
+```
+"Mutex is a lock - only one goroutine can hold it at a time. This protects our shared counter variable."
+
+```go
+counter := 0
+```
+"This is our shared data - all 5 goroutines will try to increment it. Without protection, this would cause a race condition."
+
+```go
+for i := 0; i < 5; i++ {
+    wg.Add(1)
+```
+"We're creating 5 goroutines. Before launching each one, we Add(1) to WaitGroup - this increments its internal counter."
+
+```go
+    go func(id int) {
+```
+"The 'go' keyword launches a new goroutine - like spawning a lightweight thread. We pass 'id' as a parameter to avoid closure issues."
+
+```go
+        defer wg.Done()
+```
+"'defer' means 'run this when the function exits'. Done() decrements the WaitGroup counter. Using defer ensures it always runs, even if there's an error."
+
+```go
+        for j := 0; j < 3; j++ {
+            mu.Lock()
+```
+"Each goroutine loops 3 times. Lock() acquires the mutex - if another goroutine holds it, this goroutine waits here."
+
+```go
+            counter++
+            fmt.Printf("Goroutine %d incremented counter to %d\n", id, counter)
+```
+"This is the critical section - the part we're protecting. Only ONE goroutine can execute these lines at any time."
+
+```go
+            mu.Unlock()
+```
+"Release the lock so another goroutine can acquire it. Without this, the program would deadlock."
+
+```go
+    }(i)
+```
+"The () at the end calls the function immediately, passing the current value of i as the 'id' parameter."
+
+```go
+wg.Wait()
+```
+"Block here until all goroutines call Done() - when WaitGroup counter reaches 0, we continue."
+
+```go
+fmt.Println("Final counter:", counter)
+```
+"Print the final result. Should be 15 (5 goroutines × 3 iterations)."
+
+**关键要点强调：**
+- "Without mutex: data race → unpredictable results"
+- "Mutex guarantees correctness, NOT execution order"
+- "Goroutines can run in any order - scheduler decides"
 
 ### Question for Students
 ```
@@ -100,6 +175,101 @@ mu.Unlock()  // Release lock
 ---
 
 ## Test 2: Optimistic Concurrency Control
+
+### 代码讲解指南 (How to Explain the Code Line by Line)
+
+**整体目的：**
+"This program demonstrates optimistic concurrency control - a technique where we detect conflicts rather than preventing them."
+
+**数据结构讲解：**
+
+```go
+type KV struct {
+    mu      sync.Mutex
+    value   string
+    version int
+}
+```
+"This is a key-value store with version tracking:
+- `mu`: protects the struct fields from concurrent access (prevents race conditions)
+- `value`: the actual data we're storing
+- `version`: acts like a timestamp - increments on every successful write"
+
+**put 方法讲解：**
+
+```go
+func (kv *KV) put(newValue string, expectedVersion int) bool {
+```
+"This method tries to update the value, but ONLY if the version matches expectedVersion. It returns true if successful, false if there's a conflict."
+
+```go
+    kv.mu.Lock()
+    defer kv.mu.Unlock()
+```
+"Lock the mutex to enter critical section. 'defer' ensures we always unlock, even if we return early."
+
+```go
+    if kv.version != expectedVersion {
+        return false
+    }
+```
+"Check if version has changed since the caller last read it. If it changed, someone else updated it - reject this update and return false."
+
+```go
+    kv.value = newValue
+    kv.version++
+    return true
+```
+"If version matches: update the value, increment version (to invalidate other pending updates), and return true."
+
+**main 函数讲解：**
+
+```go
+kv := &KV{value: "init", version: 0}
+```
+"Create a KV store with initial value 'init' and version 0."
+
+```go
+var wg sync.WaitGroup
+wg.Add(2)
+```
+"We'll launch 2 goroutines, so add 2 to WaitGroup."
+
+```go
+go func() {
+    defer wg.Done()
+    ok_1 := kv.put("Alice", 0)
+    fmt.Println("Alice put result 1:", ok_1)
+}()
+```
+"First goroutine tries to update value to 'Alice', expecting version 0."
+
+```go
+go func() {
+    defer wg.Done()
+    ok_1 := kv.put("Bob", 0)
+    fmt.Println("Bob put result 1:", ok_1)
+}()
+```
+"Second goroutine ALSO tries to update, ALSO expecting version 0. This creates a conflict!"
+
+```go
+wg.Wait()
+```
+"Wait for both goroutines to complete."
+
+**关键要点强调：**
+- "Both goroutines expect version=0, but only ONE will succeed"
+- "The first to acquire the lock succeeds, changes version to 1"
+- "The second one sees version=1, not 0, so it fails"
+- "This is called **optimistic locking** - like database transactions"
+- "Real-world example: Git merge conflicts are version conflicts!"
+
+**为什么需要 mutex AND version？**
+- "Mutex: prevents race conditions (low-level memory safety)"
+- "Version: detects conflicts (high-level business logic)"
+- "Without mutex: both might see version=0 → both succeed (BUG!)"
+- "Without version: second update would overwrite first (lost update problem)"
 
 ### Question for Students
 ```
@@ -201,6 +371,107 @@ mu.Unlock()
 ---
 
 ## Test 3: Raft Leader Election Simulation
+
+### 代码讲解指南 (How to Explain the Code Line by Line)
+
+**整体目的：**
+"This program simulates Raft's leader election process using randomized timeouts and atomic operations. It's a simplified version of what happens in distributed systems like Kubernetes (etcd)."
+
+**逐行讲解：**
+
+```go
+const N = 5
+var wg sync.WaitGroup
+var leader int32 = -1
+```
+"We're simulating 5 nodes in a distributed system. `leader` stores the ID of the elected leader - it's int32 because atomic operations require specific types. -1 means 'no leader yet'."
+
+```go
+wg.Add(N)
+for id := 0; id < N; id++ {
+```
+"Launch 5 goroutines, each representing a node in the cluster."
+
+```go
+    go func(id int) {
+        defer wg.Done()
+```
+"Each goroutine is a 'node' that will try to become leader. Pass id as parameter to avoid closure issues."
+
+```go
+        sleep := time.Duration(150+rand.Intn(250)) * time.Millisecond
+        time.Sleep(sleep)
+```
+"This is the randomized election timeout - each node waits between 150ms and 400ms (actually 150+0 to 150+249). The random timeout is crucial - it prevents all nodes from timing out simultaneously."
+
+**为什么要随机超时？**
+"Without randomization:
+- All nodes timeout at same time
+- All try to become leader simultaneously
+- Split vote problem - no winner
+With randomization:
+- One node times out first
+- Becomes leader immediately
+- Others see leader already exists, don't compete"
+
+```go
+        if atomic.CompareAndSwapInt32(&leader, -1, int32(id)) {
+```
+"This is Compare-And-Swap (CAS) - an atomic operation that does THREE things in ONE CPU instruction:
+1. Check if `leader` equals -1 (no leader)
+2. If yes, set `leader` to `id` (this node becomes leader)
+3. Return true/false
+
+It's atomic - no other goroutine can interrupt these steps. This is more efficient than using a mutex."
+
+**CAS 详细解释：**
+```
+Imagine this timeline:
+- Node 2 times out at 200ms → CAS(&leader, -1, 2)
+  - Check: leader == -1? YES
+  - Set: leader = 2
+  - Return: true ✓
+
+- Node 4 times out at 250ms → CAS(&leader, -1, 4)
+  - Check: leader == -1? NO (it's 2 now)
+  - Don't change anything
+  - Return: false ✗
+```
+
+```go
+            fmt.Printf("[Node %d] timeout=%v -> ELECTED leader\n", id, sleep)
+```
+"If CAS returned true, this node won - it's the leader! Print its timeout value."
+
+```go
+        } else {
+            fmt.Printf("[Node %d] timeout=%v -> lost (leader=%d)\n", id, sleep, atomic.LoadInt32(&leader))
+```
+"If CAS returned false, someone else is already leader. We use `atomic.LoadInt32` to safely read the leader value."
+
+```go
+    }(id)
+}
+wg.Wait()
+fmt.Printf("Final leader: %d\n", leader)
+```
+"Wait for all nodes to finish their timeout and election attempt. Print the final leader."
+
+**关键要点强调：**
+- "Election completes when the FIRST node times out (fastest timeout wins)"
+- "CAS is lock-free - no mutex needed, very efficient"
+- "This models Raft's randomized timeout approach"
+- "Real Raft is more complex - includes voting, terms, log replication"
+
+**和真实 Raft 的对比：**
+```
+Our Simulation:          Real Raft:
+- Random timeout         - Random timeout ✓
+- First timeout wins     - First timeout becomes Candidate
+                         - Requests votes from others
+                         - Needs majority to become Leader
+- One step (CAS)         - Multiple rounds if split vote
+```
 
 ### Question for Students
 ```
