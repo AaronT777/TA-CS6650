@@ -12,6 +12,13 @@ import (
 // 1. Which node becomes leader in a single run?
 // 2. What is the maximum possible election time in this setup (timeouts [150ms, 400ms))? Explain.
 
+//
+// This program simulates RAFT LEADER ELECTION (simplified)
+// Key concepts:
+// - Randomized timeouts prevent split votes in distributed consensus
+// - Compare-And-Swap (CAS) is a lock-free atomic operation
+// - First node to timeout becomes leader (winner-takes-all)
+
 func main() {
 
 	const N = 5 // number of nodes

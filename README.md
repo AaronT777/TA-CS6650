@@ -23,6 +23,18 @@ go run test_3/week3_test_3.go
 for i in {1..5}; do echo "=== Run $i ==="; go run test_2/week3_test_2.go; done
 ```
 
+Great! Now let's move on to a hands-on exercise.
+
+I've prepared three Go programs that test different concurrency concepts - things like race conditions, synchronization primitives, and distributed consensus.
+
+Here's how this works:
+- I'll show you the code and questions
+- Think it through and tell me what you expect to happen
+- Don't worry about getting it perfect - the discussion is more important
+- After your answer, we'll run it together and discuss
+
+Sound good? Let's look at the first one.
+
 ---
 
 ## Test 1: Concurrent Counter with Mutex
