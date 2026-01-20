@@ -15,18 +15,18 @@ func main() {
 	counter := 0
 
 	for i := 0; i < 5; i++ {
-		wg.Add(1)
+		wg.Add(1) // Increment counter before launching goroutine
 		go func(id int) {
-			defer wg.Done()
+			defer wg.Done() // Decrement counter when goroutine completes
 			for j := 0; j < 3; j++ {
-				mu.Lock()
+				mu.Lock() // Acquire lock
 				counter++
 				fmt.Printf("Goroutine %d incremented counter to %d\n", id, counter)
-				mu.Unlock()
+				mu.Unlock() // Release lock
 			}
 		}(i)
 	}
 
-	wg.Wait()
+	wg.Wait() // Block until counter becomes zero
 	fmt.Println("Final counter:", counter)
 }
